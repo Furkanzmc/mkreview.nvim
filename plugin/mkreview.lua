@@ -29,6 +29,12 @@ vim.api.nvim_create_user_command("MkReviewSessionList", function()
     require("mkreview.ui").list_sessions()
 end, { desc = "List all review sessions and switch" })
 
+vim.api.nvim_create_user_command("MkReviewPush", function()
+    require("mkreview.state").push_current_to_history()
+    vim.fn.sign_unplace("MkReviewGroup")
+    require("mkreview").notify("Active reviews moved to history.")
+end, { desc = "Archive active reviews to history stack" })
+
 vim.api.nvim_create_user_command("MkReviewClear", function()
     require("mkreview.state").clear_current_active()
     vim.fn.sign_unplace("MkReviewGroup")

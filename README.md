@@ -39,16 +39,20 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim):
    - Run `:MkReviewSessionList` to switch between existing sessions.
    - Gutter signs automatically refresh to show only **active** reviews.
 
-5. **Dump to JSON (The Stack)**:
-   - Run `:MkReviewDump`.
-   - A vertical split opens with a scratch buffer containing the JSON data.
-   - **GitHub Integration**: Inside this scratch buffer, you can run the buffer-local command `:MkReviewToGithub`. This opens a *second* buffer with the formatted payload.
-   - **Publish**: In the GitHub payload buffer, run `:make <PR_NUMBER>` (e.g., `:make 123`) to publish the review via `gh api`.
-   - These reviews are then "pushed" to the session history stack, and the active list is cleared (along with gutter signs).
-   - You can immediately start a new review round within the same session.
+5. **Dump and Publish**:
+   - Run `:MkReviewDump` to open the current reviews.
+   - Run `:MkReviewToGithub` to prepare the payload.
+   - **First Push**: Run `:MkReviewPublishToGitHub <PR_NUMBER>` (e.g., `:MkReviewPublishToGitHub 123`).
+     - This creates a **Draft** review and **automatically caches** the Review ID in your current session.
+   - **Subsequent Pushes**: After adding more reviews and dumping again, just run `:MkReviewPublishToGitHub`.
+     - The plugin will use the cached PR number and Review ID to append comments to the *existing* draft.
 
-6. **Clear Session**:
-   - Run `:MkReviewClear` to reset the active reviews and remove signs.
+6. **Archive (Batching)**:
+   - Run `:MkReviewPush` to move active reviews to history and clear gutter signs.
+
+7. **Reset / New PR**:
+   - Run `:MkReviewClear` to clear active reviews and **wipe the cached GitHub metadata** (PR# and Review ID).
+
 
 ## Configuration
 

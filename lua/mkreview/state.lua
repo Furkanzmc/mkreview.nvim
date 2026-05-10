@@ -21,6 +21,8 @@ local M = {}
 ---@field active_reviews Review[]
 ---@field history Snapshot[]
 ---@field created_at string
+---@field github_review_id number|string|nil
+---@field github_pr_number number|string|nil
 
 ---@type table<string, Session>
 M.sessions = {}
@@ -35,6 +37,8 @@ local function ensure_default_session()
             active_reviews = {},
             history = {},
             created_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+            github_review_id = nil,
+            github_pr_number = nil,
         }
     end
 end
@@ -61,6 +65,8 @@ function M.create_session(name)
         active_reviews = {},
         history = {},
         created_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        github_review_id = nil,
+        github_pr_number = nil,
     }
     return id
 end
@@ -93,9 +99,7 @@ end
 ---Pushes the current active reviews into history and clears them.
 function M.push_current_to_history()
     local session = M.get_current_session()
-    if #session.active_reviews == 0 then
-        return
-    end
+    if #session.active_reviews == 0 then return end
 
     table.insert(session.history, {
         reviews = vim.deepcopy(session.active_reviews),
@@ -104,18 +108,29 @@ function M.push_current_to_history()
     session.active_reviews = {}
 end
 
----Clears the current session's active reviews.
+---Clears the current session's active reviews and GitHub metadata.
 function M.clear_current_active()
     local session = M.get_current_session()
     session.active_reviews = {}
+    session.github_review_id = nil
+    session.github_pr_number = nil
+end
+
+---Sets the GitHub metadata for the current session.
+---@param pr_number number|string
+---@param review_id? number|string
+function M.set_github_metadata(pr_number, review_id)
+    local session = M.get_current_session()
+    session.github_pr_number = pr_number
+    if review_id then
+        session.github_review_id = review_id
+    end
 end
 
 ---Deletes a session.
 ---@param id string
 function M.delete_session(id)
-    if id == "default" then
-        return
-    end
+    if id == "default" then return end
     M.sessions[id] = nil
     if M.current_session_id == id then
         M.current_session_id = "default"
