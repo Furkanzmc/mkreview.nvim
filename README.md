@@ -24,7 +24,7 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim):
    - In **Normal Mode**, run `:MkReviewAdd` to add a review for the current line.
    - In **Visual Mode**, select a range and run `:MkReviewAdd`.
    - Enter your comment in the prompt.
-   - A `»` sign will appear in the sign column.
+   - A `❯` sign will appear in the sign column.
 
 2. **Show Review at Cursor**:
    - Run `:MkReviewShow` to see the review(s) for the current line in a notification.
@@ -40,8 +40,8 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim):
    - Gutter signs automatically refresh to show only **active** reviews.
 
 5. **Dump and Publish**:
-   - Run `:MkReviewDump` to open the current reviews.
-   - Run `:MkReviewToGithub` to prepare the payload.
+   - Run `:MkReviewDump`.
+   - A vertical split opens with a scratch buffer containing GitHub-compatible JSON.
    - **First Push**: Run `:MkReviewPublishToGitHub <PR_NUMBER>` (e.g., `:MkReviewPublishToGitHub 123`).
      - This creates a **Draft** review and **automatically caches** the Review ID in your current session.
    - **Subsequent Pushes**: After adding more reviews and dumping again, just run `:MkReviewPublishToGitHub`.
@@ -60,7 +60,7 @@ You can customize the plugin in `setup`:
 
 ```lua
 require("mkreview").setup({
-    sign_text = "»",
+    sign_text = "❯",
     sign_hl = "DiagnosticSignInfo",
     export_filename = ".mkreview.json",
     -- Custom UI for review comments

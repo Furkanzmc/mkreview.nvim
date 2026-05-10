@@ -21,8 +21,10 @@ local M = {}
 ---@field active_reviews Review[]
 ---@field history Snapshot[]
 ---@field created_at string
----@field github_review_id number|string|nil
+---@field github_review_node_id string|nil
 ---@field github_pr_number number|string|nil
+---@field github_pr_node_id string|nil
+---@field github_commit_id string|nil
 
 ---@type table<string, Session>
 M.sessions = {}
@@ -37,8 +39,10 @@ local function ensure_default_session()
             active_reviews = {},
             history = {},
             created_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-            github_review_id = nil,
+            github_review_node_id = nil,
             github_pr_number = nil,
+            github_pr_node_id = nil,
+            github_commit_id = nil,
         }
     end
 end
@@ -112,18 +116,28 @@ end
 function M.clear_current_active()
     local session = M.get_current_session()
     session.active_reviews = {}
-    session.github_review_id = nil
+    session.github_review_node_id = nil
     session.github_pr_number = nil
+    session.github_pr_node_id = nil
+    session.github_commit_id = nil
 end
 
 ---Sets the GitHub metadata for the current session.
 ---@param pr_number number|string
----@param review_id? number|string
-function M.set_github_metadata(pr_number, review_id)
+---@param review_node_id? string
+---@param commit_id? string
+---@param pr_node_id? string
+function M.set_github_metadata(pr_number, review_node_id, commit_id, pr_node_id)
     local session = M.get_current_session()
     session.github_pr_number = pr_number
-    if review_id then
-        session.github_review_id = review_id
+    if review_node_id then
+        session.github_review_node_id = review_node_id
+    end
+    if commit_id then
+        session.github_commit_id = commit_id
+    end
+    if pr_node_id then
+        session.github_pr_node_id = pr_node_id
     end
 end
 
