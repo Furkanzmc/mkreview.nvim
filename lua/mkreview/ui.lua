@@ -1,48 +1,10 @@
 local state = require("mkreview.state")
+local utils = require("mkreview.utils")
 local M = {}
 
-local ns_id = vim.api.nvim_create_namespace("mkreview")
-
----Gets the current selection range.
----@return table
-local function get_selection()
-    local mode = vim.fn.mode()
-    local start_line, start_col, end_line, end_col
-
-    if mode:match("[vV]") then
-        -- Visual mode range
-        local start_pos = vim.fn.getpos("v")
-        local end_pos = vim.fn.getpos(".")
-        start_line = start_pos[2]
-        start_col = start_pos[3]
-        end_line = end_pos[2]
-        end_col = end_pos[3]
-
-        -- Ensure start is before end
-        if start_line > end_line or (start_line == end_line and start_col > end_col) then
-            start_line, end_line = end_line, start_line
-            start_col, end_col = end_col, start_col
-        end
-    else
-        -- Normal mode (current line)
-        local pos = vim.fn.getpos(".")
-        start_line = pos[2]
-        end_line = pos[2]
-        start_col = 1
-        end_col = #vim.fn.getline(".")
-    end
-
-    return {
-        start_line = start_line,
-        start_col = start_col,
-        end_line = end_line,
-        end_col = end_col,
-    }
-end
-
----Prompts the user for a review and saves it.
+--- Prompts the user for a review and saves it.
 function M.add_review()
-    local range = get_selection()
+    local range = utils.get_selection()
     local bufnr = vim.api.nvim_get_current_buf()
     local filename = vim.api.nvim_buf_get_name(bufnr)
     local mkreview = require("mkreview")
@@ -90,7 +52,7 @@ function M.add_review()
     end
 end
 
----Refreshes the gutter signs for the current session's active reviews.
+--- Refreshes the gutter signs for the current session's active reviews.
 function M.refresh_signs()
     vim.fn.sign_unplace("MkReviewGroup")
     local current_session = state.get_current_session()
@@ -115,7 +77,7 @@ function M.refresh_signs()
     end
 end
 
----Lists active reviews in the current session and allows jumping to them.
+--- Lists active reviews in the current session and allows jumping to them.
 function M.list_reviews()
     local current_session = state.get_current_session()
     local reviews = current_session.active_reviews
@@ -163,7 +125,7 @@ function M.list_reviews()
     end
 end
 
----Lists session history (snapshots) and allows viewing reviews within them.
+--- Lists session history (snapshots) and allows viewing reviews within them.
 function M.list_history()
     local current_session = state.get_current_session()
     local history = current_session.history
@@ -215,7 +177,7 @@ function M.list_history()
     end)
 end
 
----Lists all sessions and allows switching to them.
+--- Lists all sessions and allows switching to them.
 function M.list_sessions()
     local sessions = state.get_sessions()
     local mkreview = require("mkreview")
@@ -227,7 +189,7 @@ function M.list_sessions()
         local prefix = (id == state.current_session_id) and "* " or "  "
         table.insert(
             items,
-            string.format("%s%s (%d reviews)", prefix, session.name, #session.reviews)
+            string.format("%s%s (%d reviews)", prefix, session.name, #session.active_reviews)
         )
         table.insert(session_ids, id)
     end
@@ -254,7 +216,7 @@ function M.list_sessions()
     end
 end
 
----Prompts to create a new session.
+--- Prompts to create a new session.
 function M.new_session()
     local mkreview = require("mkreview")
     vim.ui.input({ prompt = "New Session Name: " }, function(name)
@@ -268,7 +230,7 @@ function M.new_session()
     end)
 end
 
----Shows the review(s) associated with the current cursor line.
+--- Shows the review(s) associated with the current cursor line.
 function M.show_at_cursor()
     local mkreview = require("mkreview")
     local session = state.get_current_session()

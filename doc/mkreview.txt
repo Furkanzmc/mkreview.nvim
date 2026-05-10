@@ -31,57 +31,57 @@ navigation between reviews.
 
 The typical workflow consists of:
 1. Navigating to code you wish to review.
-2. Running |:MkreviewAdd| (works in Normal or Visual mode).
+2. Running |:MkReviewAdd| (works in Normal or Visual mode).
 3. Entering your comment in the prompt.
-4. Reviewing active notes with |:MkreviewList|.
-5. Browsing historical dumps with |:MkreviewHistory|.
-6. Managing multiple sessions with |:MkreviewSessionNew| and
-   |:MkreviewSessionList|.
-7. Exporting the final session with |:MkreviewDump|.
+4. Reviewing active notes with |:MkReviewList|.
+5. Browsing historical snapshots with |:MkReviewHistory|.
+6. Managing multiple sessions with |:MkReviewSessionNew| and
+   |:MkReviewSessionList|.
+7. Exporting the session with |:MkReviewDump|.
 
 ==============================================================================
 3. Commands                                                *mkreview-commands*
 
-:MkreviewAdd                                                   *:MkreviewAdd*
+:MkReviewAdd                                                   *:MkReviewAdd*
         Add a review for the current line (Normal mode) or selected range
         (Visual mode). Prompts for a comment via |vim.ui.input| (or
         |custom_ui| if configured).
 
-:MkreviewShow                                                 *:MkreviewShow*
+:MkReviewShow                                                 *:MkReviewShow*
         Show the review(s) associated with the current cursor line via
         |vim.notify|. This searches both active reviews and historical
         snapshots.
 
-:MkreviewList                                                 *:MkreviewList*
+:MkReviewList                                                 *:MkReviewList*
         List active reviews in the current session. Selecting a review
         will jump to the corresponding file and line.
 
-:MkreviewHistory                                           *:MkreviewHistory*
+:MkReviewHistory                                           *:MkReviewHistory*
         List historical snapshots (past dumps) within the current session.
         Selecting a snapshot opens a second menu to jump to specific reviews
         within that snapshot.
 
-:MkreviewSessionNew                                     *:MkreviewSessionNew*
+:MkReviewSessionNew                                     *:MkReviewSessionNew*
         Prompt for a name and create a new review session. Switches to the
         new session immediately and clears gutter signs.
 
-:MkreviewSessionList                                   *:MkreviewSessionList*
+:MkReviewSessionList                                   *:MkReviewSessionList*
         List all available review sessions and allow switching between them.
         Gutter signs will refresh to show the reviews of the selected session.
 
-:MkreviewDump                                                 *:MkreviewDump*
+:MkReviewDump                                                 *:MkReviewDump*
         Serialize the current session's active reviews to a JSON string and
         display it in a new vertical scratch buffer.
         
         The scratch buffer includes a buffer-local command:
-        |:MkreviewToGithub|: Transforms the JSON content into the schema
+        |:MkReviewToGithub|: Transforms the JSON content into the schema
         required by the GitHub API (stripping absolute paths and internal
         metadata).
         
         After a successful dump, active reviews are moved to the session's
         history stack and cleared from the active state (and gutter).
 
-:MkreviewToGithub                                       *:MkreviewToGithub*
+:MkReviewToGithub                                       *:MkReviewToGithub*
         (Buffer-local to MkReview Output)
         Transforms the raw review JSON into a GitHub-compatible payload in
         a new buffer.
@@ -90,7 +90,7 @@ The typical workflow consists of:
         `:make <PR_NUMBER>`
         to publish the review via `gh api`.
 
-:MkreviewClear                                               *:MkreviewClear*
+:MkReviewClear                                               *:MkReviewClear*
         Clear the current session's active reviews and remove gutter signs.
         Historical snapshots are preserved.
 
@@ -108,7 +108,7 @@ Available options:
 
 sign_text                                                 *mkreview-sign_text*
         Type: `string`
-        Default: `"💬"`
+        Default: `"»"`
         The character to display in the sign column.
 
 sign_hl                                                     *mkreview-sign_hl*
@@ -119,7 +119,7 @@ sign_hl                                                     *mkreview-sign_hl*
 export_filename                                     *mkreview-export_filename*
         Type: `string`
         Default: `".mkreview.json"`
-        The name of the file created by |:MkreviewDump|.
+        The name of the file created by |:MkReviewDump|.
 
 custom_ui                                                 *mkreview-custom_ui*
         Type: `function?`
@@ -139,13 +139,16 @@ custom_list_ui                                       *mkreview-custom_list_ui*
 For advanced users, the underlying Lua modules can be required:
 
 require("mkreview.state")
-    Manages the in-memory review table.
+    Manages the in-memory review sessions and history.
 
 require("mkreview.ui")
-    Handles range selection and UI prompts.
+    Handles range selection, display, and UI prompts.
+
+require("mkreview.utils")
+    Internal utility functions.
 
 require("mkreview.export")
-    Handles JSON serialization.
+    Handles JSON serialization and GitHub transformation.
 
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:
