@@ -2,17 +2,17 @@
 local M = {}
 
 M.config = {
-    sign_text = "💬",
+    sign_text = "»",
     sign_hl = "DiagnosticSignInfo",
     export_filename = ".mkreview.json",
-    ---@type function? A function that takes {prompt, callback} and handles input. If nil, uses vim.ui.input.
+    --- @type function? A function that takes {prompt, callback} and handles input. If nil, uses vim.ui.input.
     custom_ui = nil,
-    ---@type function? A function that takes {items, prompt, callback} and handles selection. If nil, uses vim.ui.select.
+    --- @type function? A function that takes {items, prompt, callback} and handles selection. If nil, uses vim.ui.select.
     custom_list_ui = nil,
 }
 
----Initializes the plugin with optional user configuration.
----@param opts? table
+--- Initializes the plugin with optional user configuration.
+--- @param opts? table
 function M.setup(opts)
     M.config = vim.tbl_deep_extend("force", M.config, opts or {})
 
@@ -23,9 +23,9 @@ function M.setup(opts)
     })
 end
 
----Notify helper
----@param msg string
----@param level? number
+--- Notify helper
+--- @param msg string
+--- @param level? number
 function M.notify(msg, level)
     vim.notify(msg, level or vim.log.levels.INFO, { title = "mkreview.nvim" })
 end

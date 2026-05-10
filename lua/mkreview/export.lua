@@ -2,7 +2,7 @@ local state = require("mkreview.state")
 local config = require("mkreview").config
 local M = {}
 
----Dumps the current session's active reviews to a scratch buffer.
+--- Dumps the current session's active reviews to a scratch buffer.
 function M.dump()
     local mkreview = require("mkreview")
     local session = state.get_current_session()
@@ -51,7 +51,7 @@ function M.dump()
     vim.api.nvim_win_set_buf(0, bufnr)
 
     -- Add buffer-local command to convert to GitHub format
-    vim.api.nvim_buf_create_user_command(bufnr, "MkreviewToGithub", function()
+    vim.api.nvim_buf_create_user_command(bufnr, "MkReviewToGithub", function()
         local content = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
         local success, decoded = pcall(vim.fn.json_decode, content)
         if not success then
