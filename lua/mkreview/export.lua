@@ -53,7 +53,6 @@ function M.dump()
 
     -- Set the JSON content
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-    vim.api.nvim_buf_set_option(bufnr, "modified", false)
 
     -- Assign a unique temporary path for publishing
     local tmp_name = vim.fn.tempname() .. "_gh_review.json"
@@ -158,6 +157,8 @@ function M.dump()
     if formatprg ~= "" then
         vim.api.nvim_command("normal! gqG")
     end
+
+    vim.api.nvim_buf_set_option(bufnr, "modified", false)
 
     local current_session = state.get_current_session()
     if current_session.github_review_node_id then
