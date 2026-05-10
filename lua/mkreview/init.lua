@@ -2,7 +2,7 @@
 local M = {}
 
 M.config = {
-    sign_text = "»",
+    sign_text = "❯",
     sign_hl = "DiagnosticSignInfo",
     export_filename = ".mkreview.json",
     --- @type function? A function that takes {prompt, callback} and handles input. If nil, uses vim.ui.input.
@@ -12,7 +12,12 @@ M.config = {
 }
 
 --- Initializes the plugin with optional user configuration.
---- @param opts? table
+--- @param opts? table Configuration options:
+---   - sign_text (string): Character to display in sign column (default: "❯")
+---   - sign_hl (string): Highlight group for the sign (default: "DiagnosticSignInfo")
+---   - export_filename (string): Default filename for JSON exports (default: ".mkreview.json")
+---   - custom_ui (function): Custom function for review input
+---   - custom_list_ui (function): Custom function for listing reviews
 function M.setup(opts)
     M.config = vim.tbl_deep_extend("force", M.config, opts or {})
 

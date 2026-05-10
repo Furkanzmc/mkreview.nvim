@@ -70,23 +70,10 @@ The typical workflow consists of:
         Gutter signs will refresh to show the reviews of the selected session.
 
 :MkReviewDump                                                 *:MkReviewDump*
-        Serialize the current session's active reviews to a JSON string and
-        display it in a new vertical scratch buffer.
+        Serialize the current session's active reviews to a GitHub-compatible
+        JSON string and display it in a new vertical scratch buffer.
         
-        The scratch buffer includes a buffer-local command:
-        |:MkReviewToGithub|: Transforms the JSON content into the schema
-        required by the GitHub API (stripping absolute paths and internal
-        metadata).
-        
-        After a successful dump, active reviews are moved to the session's
-        history stack and cleared from the active state (and gutter).
-
-:MkReviewToGithub                                       *:MkReviewToGithub*
-        (Buffer-local to MkReview Output)
-        Transforms the raw review JSON into a GitHub-compatible payload in
-        a new buffer.
-        
-        The new buffer provides the following command:
+        The scratch buffer provides the following command:
         |:MkReviewPublishToGitHub| [<PR_NUMBER>]
             Publishes the reviews. On the first run, provide the PR number.
             The resulting Review ID is automatically cached in the session.
@@ -116,7 +103,7 @@ Available options:
 
 sign_text                                                 *mkreview-sign_text*
         Type: `string`
-        Default: `"»"`
+        Default: `"❯"`
         The character to display in the sign column.
 
 sign_hl                                                     *mkreview-sign_hl*
