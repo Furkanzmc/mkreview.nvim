@@ -1,0 +1,151 @@
+*mkreview.txt*   Interactive code review session creator for LLMs
+
+Author: Gemini CLI (AI Assistant)
+License: Same as Neovim (see |license|)
+
+> [!IMPORTANT]
+> This plugin was autonomously developed by Gemini CLI.
+
+==============================================================================
+CONTENTS                                                      *mkreview-contents*
+
+1. Introduction..........................................|mkreview-introduction|
+2. Usage......................................................|mkreview-usage|
+3. Commands................................................|mkreview-commands|
+4. Configuration......................................|mkreview-configuration|
+5. API..........................................................|mkreview-api|
+
+==============================================================================
+1. Introduction                                        *mkreview-introduction*
+
+mkreview.nvim is a Neovim plugin designed to help you interactively create
+code review sessions. These sessions are captured as structured data and
+exported to a JSON file, which can then be fed into a Large Language Model
+(LLM) for processing or analysis.
+
+It provides visual feedback via signs in the gutter and allows for easy
+navigation between reviews.
+
+==============================================================================
+2. Usage                                                      *mkreview-usage*
+
+The typical workflow consists of:
+1. Navigating to code you wish to review.
+2. Running |:MkreviewAdd| (works in Normal or Visual mode).
+3. Entering your comment in the prompt.
+4. Reviewing active notes with |:MkreviewList|.
+5. Browsing historical dumps with |:MkreviewHistory|.
+6. Managing multiple sessions with |:MkreviewSessionNew| and
+   |:MkreviewSessionList|.
+7. Exporting the final session with |:MkreviewDump|.
+
+==============================================================================
+3. Commands                                                *mkreview-commands*
+
+:MkreviewAdd                                                   *:MkreviewAdd*
+        Add a review for the current line (Normal mode) or selected range
+        (Visual mode). Prompts for a comment via |vim.ui.input| (or
+        |custom_ui| if configured).
+
+:MkreviewShow                                                 *:MkreviewShow*
+        Show the review(s) associated with the current cursor line via
+        |vim.notify|. This searches both active reviews and historical
+        snapshots.
+
+:MkreviewList                                                 *:MkreviewList*
+        List active reviews in the current session. Selecting a review
+        will jump to the corresponding file and line.
+
+:MkreviewHistory                                           *:MkreviewHistory*
+        List historical snapshots (past dumps) within the current session.
+        Selecting a snapshot opens a second menu to jump to specific reviews
+        within that snapshot.
+
+:MkreviewSessionNew                                     *:MkreviewSessionNew*
+        Prompt for a name and create a new review session. Switches to the
+        new session immediately and clears gutter signs.
+
+:MkreviewSessionList                                   *:MkreviewSessionList*
+        List all available review sessions and allow switching between them.
+        Gutter signs will refresh to show the reviews of the selected session.
+
+:MkreviewDump                                                 *:MkreviewDump*
+        Serialize the current session's active reviews to a JSON string and
+        display it in a new vertical scratch buffer.
+        
+        The scratch buffer includes a buffer-local command:
+        |:MkreviewToGithub|: Transforms the JSON content into the schema
+        required by the GitHub API (stripping absolute paths and internal
+        metadata).
+        
+        After a successful dump, active reviews are moved to the session's
+        history stack and cleared from the active state (and gutter).
+
+:MkreviewToGithub                                       *:MkreviewToGithub*
+        (Buffer-local to MkReview Output)
+        Transforms the raw review JSON into a GitHub-compatible payload in
+        a new buffer.
+        
+        Inside the new payload buffer, run:
+        `:make <PR_NUMBER>`
+        to publish the review via `gh api`.
+
+:MkreviewClear                                               *:MkreviewClear*
+        Clear the current session's active reviews and remove gutter signs.
+        Historical snapshots are preserved.
+
+==============================================================================
+4. Configuration                                      *mkreview-configuration*
+
+Initialize the plugin in your `init.lua` with:
+>lua
+    require("mkreview").setup({
+        -- options...
+    })
+<
+
+Available options:
+
+sign_text                                                 *mkreview-sign_text*
+        Type: `string`
+        Default: `"💬"`
+        The character to display in the sign column.
+
+sign_hl                                                     *mkreview-sign_hl*
+        Type: `string`
+        Default: `"DiagnosticSignInfo"`
+        The highlight group for the sign.
+
+export_filename                                     *mkreview-export_filename*
+        Type: `string`
+        Default: `".mkreview.json"`
+        The name of the file created by |:MkreviewDump|.
+
+custom_ui                                                 *mkreview-custom_ui*
+        Type: `function?`
+        Default: `nil`
+        A function that takes `{prompt, callback}` and handles the input UI.
+        If `nil`, the plugin uses |vim.ui.input|.
+
+custom_list_ui                                       *mkreview-custom_list_ui*
+        Type: `function?`
+        Default: `nil`
+        A function that takes `{items, prompt, callback}` and handles the
+        selection UI. If `nil`, the plugin uses |vim.ui.select|.
+
+==============================================================================
+5. API                                                          *mkreview-api*
+
+For advanced users, the underlying Lua modules can be required:
+
+require("mkreview.state")
+    Manages the in-memory review table.
+
+require("mkreview.ui")
+    Handles range selection and UI prompts.
+
+require("mkreview.export")
+    Handles JSON serialization.
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

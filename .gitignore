@@ -1,0 +1,15 @@
+# Neovim temporary files
+*.swp
+*.swo
+*.swn
+*.swm
+
+# mkreview default export
+.mkreview.json
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
