@@ -30,7 +30,7 @@ function M.dump()
     local bufnr = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_option(bufnr, "buftype", "nofile")
     vim.api.nvim_buf_set_option(bufnr, "bufhidden", "wipe")
-    vim.api.nvim_buf_set_option(bufnr, "swapfile", false)
+    vim.api.nvim_buf_set_option(gh_bufnr, "swapfile", false)
     vim.api.nvim_buf_set_option(bufnr, "filetype", "json")
 
     -- Find a unique buffer name
@@ -61,7 +61,6 @@ function M.dump()
 
         local github_format = {
             body = string.format("Review session: %s", decoded.session_name or "Untitled"),
-            event = "COMMENT",
             comments = {},
         }
 
@@ -77,28 +76,61 @@ function M.dump()
 
         local encoded = vim.fn.json_encode(github_format)
 
-        local gh_bufnr = vim.api.nvim_create_buf(false, true)
-        vim.api.nvim_buf_set_option(gh_bufnr, "buftype", "nofile")
+        -- Create a buffer for the GitHub payload
+        local gh_bufnr = vim.api.nvim_create_buf(false, false)
         vim.api.nvim_buf_set_option(gh_bufnr, "bufhidden", "wipe")
         vim.api.nvim_buf_set_option(gh_bufnr, "swapfile", false)
         vim.api.nvim_buf_set_option(gh_bufnr, "filetype", "json")
 
-        -- Find a unique buffer name for the GitHub payload
-        local gh_base_name = "GitHub Review Payload"
-        local gh_final_name = gh_base_name
-        local gh_counter = 1
-        while vim.fn.bufexists(gh_final_name) ~= 0 do
-            gh_final_name = string.format("%s (%d)", gh_base_name, gh_counter)
-            gh_counter = gh_counter + 1
-        end
-        vim.api.nvim_buf_set_name(gh_bufnr, gh_final_name)
+        -- Assign a unique temporary path as the buffer name
+        local tmp_name = vim.fn.tempname() .. "_gh_review.json"
+        vim.api.nvim_buf_set_name(gh_bufnr, tmp_name)
 
         vim.api.nvim_buf_set_lines(gh_bufnr, 0, -1, false, vim.split(encoded, "\n"))
 
-        -- Set makeprg to publish via gh CLI
-        -- Use $* so the user can pass the PR number to :make
-        local cmd = "gh api repos/:owner/:repo/pulls/$*/reviews --input -"
-        vim.api.nvim_buf_set_option(gh_bufnr, "makeprg", cmd)
+        -- Add buffer-local publishing command
+        vim.api.nvim_buf_create_user_command(gh_bufnr, "MkReviewPublishToGitHub", function(opts)
+            local current_session = state.get_current_session()
+            local pr_number = (opts.args ~= "") and opts.args or current_session.github_pr_number
+            local review_id = current_session.github_review_id
+
+            if not pr_number or pr_number == "" then
+                mkreview.notify("PR number required. Usage: :MkReviewPublishToGitHub <PR_NUMBER>", vim.log.levels.ERROR)
+                return
+            end
+
+            -- Ensure we have saved the buffer to the temp file
+            vim.cmd("write!")
+
+            local api_cmd
+            if review_id then
+                -- Append mode: expects comments array
+                api_cmd = string.format(
+                    "cat %s | jq '.comments // .' | gh api repos/:owner/:repo/pulls/%s/reviews/%s/comments --input -",
+                    tmp_name, pr_number, review_id
+                )
+            else
+                -- New review mode
+                api_cmd = string.format(
+                    "gh api repos/:owner/:repo/pulls/%s/reviews --input %s",
+                    pr_number, tmp_name
+                )
+            end
+
+            local output = vim.fn.system(api_cmd)
+            local res_success, res_decoded = pcall(vim.fn.json_decode, output)
+            
+            if res_success then
+                if res_decoded.id then
+                    state.set_github_metadata(pr_number, res_decoded.id)
+                    mkreview.notify(string.format("Published to PR #%s (Review ID: %s)", pr_number, res_decoded.id))
+                else
+                    mkreview.notify("Successfully published comments to existing review.")
+                end
+            else
+                mkreview.notify("Failed to parse GitHub response: " .. output, vim.log.levels.ERROR)
+            end
+        end, { nargs = "?", desc = "Publish review payload to GitHub (caches PR# and Review ID)" })
 
         -- Open the new buffer in a split
         vim.api.nvim_command("vsplit")
@@ -110,7 +142,13 @@ function M.dump()
             vim.api.nvim_command("normal! gqG")
         end
 
-        mkreview.notify("GitHub payload created. Run ':make <PR_NUMBER>' to publish.")
+        local current_session = state.get_current_session()
+        if current_session.github_review_id then
+            mkreview.notify(string.format("Ready to append to PR #%s (Review: %s). Run :MkReviewPublishToGitHub", 
+                current_session.github_pr_number, current_session.github_review_id))
+        else
+            mkreview.notify("GitHub payload created. Run ':MkReviewPublishToGitHub <PR_NUMBER>' to create a Draft review.")
+        end
     end, { desc = "Transform current JSON to GitHub API format and prepare for publishing" })
 
     -- Format if formatprg is set
@@ -119,12 +157,7 @@ function M.dump()
         vim.api.nvim_command("normal! gqG")
     end
 
-    -- Push to history and clear active
-    state.push_current_to_history()
-    -- Clear signs from the gutter
-    vim.fn.sign_unplace("MkReviewGroup")
-
-    mkreview.notify("Reviews dumped to scratch buffer and pushed to history.")
+    mkreview.notify("Reviews dumped to scratch buffer.")
 end
 
 return M

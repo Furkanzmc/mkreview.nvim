@@ -86,13 +86,21 @@ The typical workflow consists of:
         Transforms the raw review JSON into a GitHub-compatible payload in
         a new buffer.
         
-        Inside the new payload buffer, run:
-        `:make <PR_NUMBER>`
-        to publish the review via `gh api`.
+        The new buffer provides the following command:
+        |:MkReviewPublishToGitHub| [<PR_NUMBER>]
+            Publishes the reviews. On the first run, provide the PR number.
+            The resulting Review ID is automatically cached in the session.
+            On subsequent runs, the PR number is optional, and comments will
+            be appended to the existing pending review.
+
+:MkReviewPush                                                 *:MkReviewPush*
+        Move all active reviews in the current session to the history
+        stack and clear the gutter signs. This is recommended after
+        successfully publishing a batch to GitHub.
 
 :MkReviewClear                                               *:MkReviewClear*
-        Clear the current session's active reviews and remove gutter signs.
-        Historical snapshots are preserved.
+        Clear the current session's active reviews, remove gutter signs,
+        and wipe the cached GitHub Review ID and PR number.
 
 ==============================================================================
 4. Configuration                                      *mkreview-configuration*
