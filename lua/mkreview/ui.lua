@@ -96,45 +96,55 @@ function M.list_reviews()
 
     if #reviews == 0 then
         mkreview.notify(
-            string.format("No active reviews in session: %s", current_session.name),
+            string.format("No active reviews in session: %s\n", current_session.name),
             vim.log.levels.WARN
         )
         return
     end
 
-    local items = {}
-    for i, review in ipairs(reviews) do
-        local filename = vim.fn.fnamemodify(review.filename, ":t")
-        -- Handle multi-line comments for display
-        local display_comment = review.comment:gsub("\n", " ")
-        table.insert(
-            items,
-            string.format("%d: [%s:%d] %s", i, filename, review.start_line, display_comment)
-        )
-    end
-
-    local function on_select(_, idx)
-        if not idx then
-            return
+    if mkreview.config.custom_list_ui then
+        local items = {}
+        for i, review in ipairs(reviews) do
+            local filename = vim.fn.fnamemodify(review.filename, ":t")
+            -- Handle multi-line comments for display
+            local display_comment = review.comment:gsub("\n", " ")
+            table.insert(
+                items,
+                string.format("%d: [%s:%d] %s", i, filename, review.start_line, display_comment)
+            )
         end
 
-        local review = reviews[idx]
-        vim.cmd("edit " .. vim.fn.fnameescape(review.filename))
-        vim.api.nvim_win_set_cursor(0, { review.start_line, review.start_col - 1 })
-    end
+        local function on_select(_, idx)
+            if not idx then
+                return
+            end
 
-    if mkreview.config.custom_list_ui then
+            local review = reviews[idx]
+            vim.cmd("edit " .. vim.fn.fnameescape(review.filename))
+            vim.api.nvim_win_set_cursor(0, { review.start_line, review.start_col - 1 })
+        end
+
         mkreview.config.custom_list_ui({
             items = items,
             prompt = string.format("Session [%s] - Active Reviews:", current_session.name),
         }, on_select)
     else
-        vim.ui.select(items, {
-            prompt = string.format("Session [%s] - Active Reviews:", current_session.name),
-            format_item = function(item)
-                return item
-            end,
-        }, on_select)
+        local qf_items = {}
+        for _, review in ipairs(reviews) do
+            -- Handle multi-line comments for quickfix display
+            local display_comment = review.comment:gsub("\n", " ")
+            table.insert(qf_items, {
+                bufnr = review.bufnr,
+                filename = review.filename,
+                lnum = review.start_line,
+                col = review.start_col,
+                text = display_comment,
+            })
+        end
+
+        vim.fn.setqflist(qf_items, "r")
+        vim.fn.setqflist({}, "a", { title = string.format("MkReview: %s", current_session.name) })
+        vim.cmd("copen")
     end
 end
 
@@ -146,7 +156,7 @@ function M.list_history()
 
     if #history == 0 then
         mkreview.notify(
-            string.format("No history in session: %s", current_session.name),
+            string.format("No history in session: %s\n", current_session.name),
             vim.log.levels.WARN
         )
         return
@@ -168,27 +178,24 @@ function M.list_history()
         end
 
         local snapshot = history[snapshot_idx]
-        local review_items = {}
-        for i, review in ipairs(snapshot.reviews) do
-            local filename = vim.fn.fnamemodify(review.filename, ":t")
+        local qf_items = {}
+        for _, review in ipairs(snapshot.reviews) do
             -- Handle multi-line comments for display
             local display_comment = review.comment:gsub("\n", " ")
-            table.insert(
-                review_items,
-                string.format("%d: [%s:%d] %s", i, filename, review.start_line, display_comment)
-            )
+            table.insert(qf_items, {
+                bufnr = review.bufnr,
+                filename = review.filename,
+                lnum = review.start_line,
+                col = review.start_col,
+                text = display_comment,
+            })
         end
 
-        vim.ui.select(review_items, {
-            prompt = string.format("Snapshot %d Reviews:", snapshot_idx),
-        }, function(_, review_idx)
-            if not review_idx then
-                return
-            end
-            local review = snapshot.reviews[review_idx]
-            vim.cmd("edit " .. vim.fn.fnameescape(review.filename))
-            vim.api.nvim_win_set_cursor(0, { review.start_line, review.start_col - 1 })
-        end)
+        vim.fn.setqflist(qf_items, "r")
+        vim.fn.setqflist({}, "a", {
+            title = string.format("MkReview Snap %d: %s", snapshot_idx, current_session.name),
+        })
+        vim.cmd("copen")
     end)
 end
 
