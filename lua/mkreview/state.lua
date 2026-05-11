@@ -54,6 +54,28 @@ function M.add_review(review)
     table.insert(M.sessions[M.current_session_id].active_reviews, review)
 end
 
+---Finds an active review at the given line in a buffer.
+---@param bufnr number
+---@param line number
+---@return Review|nil
+function M.get_review_at_line(bufnr, line)
+    local session = M.get_current_session()
+    for _, review in ipairs(session.active_reviews) do
+        if review.bufnr == bufnr and line >= review.start_line and line <= review.end_line then
+            return review
+        end
+    end
+    return nil
+end
+
+---Updates the comment of an existing review.
+---@param review Review
+---@param new_comment string
+function M.update_review(review, new_comment)
+    review.comment = new_comment
+    review.timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+end
+
 ---Creates a new session.
 ---@param name string
 ---@return string id The generated session ID

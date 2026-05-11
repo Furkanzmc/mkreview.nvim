@@ -9,6 +9,10 @@ vim.api.nvim_create_user_command("MkReviewDelete", function(opts)
     require("mkreview.ui").delete_review(opts)
 end, { range = true, desc = "Delete review(s) for the current line or range" })
 
+vim.api.nvim_create_user_command("MkReviewEdit", function()
+    require("mkreview.ui").edit_review()
+end, { desc = "Edit the review for the current line" })
+
 vim.api.nvim_create_user_command("MkReviewShow", function()
     require("mkreview.ui").show_at_cursor()
 end, { desc = "Show review(s) for the current line" })

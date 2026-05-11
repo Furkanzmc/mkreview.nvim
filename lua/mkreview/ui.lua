@@ -273,6 +273,30 @@ function M.delete_review(opts)
     mkreview.notify(string.format("Reviews deleted in range %d-%d.\n", start_line, end_line))
 end
 
+--- Edits the review on the current cursor line.
+function M.edit_review()
+    local bufnr = vim.api.nvim_get_current_buf()
+    local line = vim.api.nvim_win_get_cursor(0)[1]
+    local review = state.get_review_at_line(bufnr, line)
+
+    local mkreview = require("mkreview")
+    if not review then
+        mkreview.notify("No active review found on this line to edit.\n", vim.log.levels.WARN)
+        return
+    end
+
+    M.preview_input({
+        prompt = "Edit Review Comment",
+        initial_content = review.comment,
+    }, function(new_comment)
+        if not new_comment or new_comment == "" then
+            return
+        end
+        state.update_review(review, new_comment)
+        mkreview.notify("Review updated.\n")
+    end)
+end
+
 --- Shows the review(s) associated with the current cursor line.
 function M.show_at_cursor()
     local mkreview = require("mkreview")
@@ -337,17 +361,27 @@ function M.preview_input(opts, callback)
     vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = bufnr })
     vim.api.nvim_set_option_value("swapfile", false, { buf = bufnr })
 
-    -- Show prompt as a comment in the buffer if provided
+    -- Prepare content
+    local initial_lines = {}
     if opts.prompt then
-        vim.api.nvim_buf_set_lines(
-            bufnr,
-            0,
-            -1,
-            false,
-            { "<!-- " .. opts.prompt .. " -->", "", "" }
-        )
-        vim.api.nvim_win_set_cursor(winnr, { 3, 0 })
+        table.insert(initial_lines, "<!-- " .. opts.prompt .. " -->")
+        table.insert(initial_lines, "")
     end
+
+    if opts.initial_content then
+        local content_lines = vim.split(opts.initial_content, "\n")
+        for _, l in ipairs(content_lines) do
+            table.insert(initial_lines, l)
+        end
+    else
+        table.insert(initial_lines, "")
+    end
+
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, initial_lines)
+
+    -- Position cursor: after the prompt if it exists, otherwise at the top
+    local start_row = opts.prompt and 3 or 1
+    vim.api.nvim_win_set_cursor(winnr, { start_row, 0 })
 
     local submitted = false
     local function confirm(internal_opts)
