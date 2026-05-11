@@ -2,6 +2,26 @@ local state = require("mkreview.state")
 local config = require("mkreview").config
 local M = {}
 
+--- Gets the current GitHub context (hostname and repository name).
+--- @return table|nil context {host, repo, full_repo} or nil
+--- @return string|nil error_message
+local function get_gh_context()
+    local output = vim.fn.system("gh repo view --json url,nameWithOwner")
+    if vim.v.shell_error ~= 0 then
+        return nil, "Failed to get GitHub repository context. Ensure you are in a git repo and logged in to 'gh'."
+    end
+    local ok, decoded = pcall(vim.fn.json_decode, output)
+    if not ok then
+        return nil, "Failed to parse GitHub repository metadata."
+    end
+    local host = decoded.url:match("https?://([^/]+)")
+    return {
+        host = host,
+        repo = decoded.nameWithOwner,
+        full_repo = host .. "/" .. decoded.nameWithOwner
+    }
+end
+
 --- Dumps the current session's active reviews to a scratch buffer in GitHub-compatible format.
 function M.dump()
     local mkreview = require("mkreview")
@@ -66,6 +86,12 @@ function M.dump()
 
     -- Add buffer-local publishing command
     vim.api.nvim_buf_create_user_command(bufnr, "MkReviewPublishToGitHub", function(opts)
+        local ctx, err = get_gh_context()
+        if not ctx then
+            require("mkreview").notify(err, vim.log.levels.ERROR)
+            return
+        end
+
         local current_session = state.get_current_session()
         local pr_number = (opts.args ~= "") and opts.args or current_session.github_pr_number
         local review_node_id = current_session.github_review_node_id
@@ -73,7 +99,7 @@ function M.dump()
         local pr_node_id = current_session.github_pr_node_id
 
         if not pr_number or pr_number == "" then
-            mkreview.notify(
+            require("mkreview").notify(
                 "PR number required. Usage: :MkReviewPublishToGitHub <PR_NUMBER>",
                 vim.log.levels.ERROR
             )
@@ -88,19 +114,26 @@ function M.dump()
             f:close()
             vim.api.nvim_set_option_value("modified", false, { buf = bufnr })
         else
-            mkreview.notify("Failed to write temporary file for publishing.", vim.log.levels.ERROR)
+            require("mkreview").notify(
+                "Failed to write temporary file for publishing.",
+                vim.log.levels.ERROR
+            )
             return
         end
 
         if review_node_id and commit_id then
             -- Append mode: Use modern GraphQL Threading
             if not pr_node_id then
-                local fetch_cmd = string.format("gh pr view %s --json id -q .id", pr_number)
+                local fetch_cmd = string.format(
+                    "gh pr view %s -R %s --json id -q .id",
+                    pr_number,
+                    ctx.full_repo
+                )
                 pr_node_id = vim.fn.system(fetch_cmd):gsub("\n", "")
                 state.set_github_metadata(pr_number, nil, nil, pr_node_id)
             end
 
-            mkreview.notify(string.format("Appending comments to Review ID: %s", review_node_id))
+            require("mkreview").notify(string.format("Appending comments to Review ID: %s", review_node_id))
 
             local decoded_payload = vim.fn.json_decode(content)
             local comments = decoded_payload.comments or decoded_payload
@@ -134,7 +167,8 @@ function M.dump()
                 end
 
                 local api_cmd = string.format(
-                    "gh api graphql -F query='%s' -f prId='%s' -f reviewId='%s' -f body='%s' -f path='%s' -F line=%d -f side='%s' %s",
+                    "gh api graphql --hostname %s -F query='%s' -f prId='%s' -f reviewId='%s' -f body='%s' -f path='%s' -F line=%d -f side='%s' %s",
+                    ctx.host,
                     query:gsub("\n", " "),
                     pr_node_id,
                     review_node_id,
@@ -149,13 +183,13 @@ function M.dump()
                 if vim.v.shell_error == 0 then
                     success_count = success_count + 1
                 else
-                    mkreview.notify(
+                    require("mkreview").notify(
                         "Failed to post GraphQL comment: " .. output,
                         vim.log.levels.ERROR
                     )
                 end
             end
-            mkreview.notify(
+            require("mkreview").notify(
                 string.format(
                     "Successfully appended %d comments to PR #%s.",
                     success_count,
@@ -165,8 +199,10 @@ function M.dump()
         else
             -- New review mode (REST API)
             local api_cmd = string.format(
-                "gh api repos/:owner/:repo/pulls/%s/reviews --input %s",
+                "gh api repos/%s/pulls/%s/reviews --hostname %s --input %s",
+                ctx.repo,
                 pr_number,
+                ctx.host,
                 tmp_name
             )
             local output = vim.fn.system(api_cmd)
@@ -174,7 +210,7 @@ function M.dump()
 
             if res_success and res_decoded.node_id then
                 state.set_github_metadata(pr_number, res_decoded.node_id, res_decoded.commit_id)
-                mkreview.notify(
+                require("mkreview").notify(
                     string.format(
                         "Created Draft Review on PR #%s (ID: %s)",
                         pr_number,
@@ -182,7 +218,7 @@ function M.dump()
                     )
                 )
             else
-                mkreview.notify("Failed to create review: " .. output, vim.log.levels.ERROR)
+                require("mkreview").notify("Failed to create review: " .. output, vim.log.levels.ERROR)
             end
         end
     end, { nargs = "?", desc = "Publish review payload to GitHub" })
