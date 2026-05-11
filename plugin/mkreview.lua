@@ -1,9 +1,13 @@
 -- plugin/mkreview.lua
 
 -- Define user commands
-vim.api.nvim_create_user_command("MkReviewAdd", function()
-    require("mkreview.ui").add_review()
+vim.api.nvim_create_user_command("MkReviewAdd", function(opts)
+    require("mkreview.ui").add_review(opts)
 end, { range = true, desc = "Add a review for the current selection" })
+
+vim.api.nvim_create_user_command("MkReviewDelete", function(opts)
+    require("mkreview.ui").delete_review(opts)
+end, { range = true, desc = "Delete review(s) for the current line or range" })
 
 vim.api.nvim_create_user_command("MkReviewShow", function()
     require("mkreview.ui").show_at_cursor()

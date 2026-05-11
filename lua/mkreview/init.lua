@@ -5,8 +5,10 @@ M.config = {
     sign_text = "❯",
     sign_hl = "DiagnosticSignInfo",
     export_filename = ".mkreview.json",
-    --- @type function? A function that takes {prompt, callback} and handles input. If nil, uses vim.ui.input.
-    custom_ui = nil,
+    --- @type function? A function that takes {prompt, callback} and handles input. By default uses a preview buffer.
+    custom_ui = function(opts, callback)
+        require("mkreview.ui").preview_input(opts, callback)
+    end,
     --- @type function? A function that takes {items, prompt, callback} and handles selection. If nil, uses vim.ui.select.
     custom_list_ui = nil,
 }
