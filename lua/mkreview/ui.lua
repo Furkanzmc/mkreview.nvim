@@ -3,8 +3,20 @@ local utils = require("mkreview.utils")
 local M = {}
 
 --- Prompts the user for a review and saves it.
-function M.add_review()
-    local range = utils.get_selection()
+--- @param opts? table Optional range {line1, line2}
+function M.add_review(opts)
+    local range
+    if opts and opts.line1 and opts.line2 then
+        range = {
+            start_line = opts.line1,
+            end_line = opts.line2,
+            start_col = 1,
+            end_col = #vim.fn.getline(opts.line2),
+        }
+    else
+        range = utils.get_selection()
+    end
+
     local bufnr = vim.api.nvim_get_current_buf()
     local filename = vim.api.nvim_buf_get_name(bufnr)
     local mkreview = require("mkreview")
@@ -18,7 +30,7 @@ function M.add_review()
 
     local function on_confirm(input)
         if not input or input == "" then
-            mkreview.notify("Review cancelled or empty.", vim.log.levels.WARN)
+            mkreview.notify("Review cancelled or empty.\n", vim.log.levels.WARN)
             return
         end
 
@@ -42,9 +54,8 @@ function M.add_review()
         end
 
         local current_session = state.get_current_session()
-        mkreview.notify(string.format("Review added to session: %s", current_session.name))
+        mkreview.notify(string.format("Review added to session: %s\n", current_session.name))
     end
-
     if config.custom_ui then
         config.custom_ui({ prompt = "Review Comment: " }, on_confirm)
     else
@@ -94,9 +105,11 @@ function M.list_reviews()
     local items = {}
     for i, review in ipairs(reviews) do
         local filename = vim.fn.fnamemodify(review.filename, ":t")
+        -- Handle multi-line comments for display
+        local display_comment = review.comment:gsub("\n", " ")
         table.insert(
             items,
-            string.format("%d: [%s:%d] %s", i, filename, review.start_line, review.comment)
+            string.format("%d: [%s:%d] %s", i, filename, review.start_line, display_comment)
         )
     end
 
@@ -158,9 +171,11 @@ function M.list_history()
         local review_items = {}
         for i, review in ipairs(snapshot.reviews) do
             local filename = vim.fn.fnamemodify(review.filename, ":t")
+            -- Handle multi-line comments for display
+            local display_comment = review.comment:gsub("\n", " ")
             table.insert(
                 review_items,
-                string.format("%d: [%s:%d] %s", i, filename, review.start_line, review.comment)
+                string.format("%d: [%s:%d] %s", i, filename, review.start_line, display_comment)
             )
         end
 
@@ -201,7 +216,7 @@ function M.list_sessions()
         local selected_id = session_ids[idx]
         state.switch_session(selected_id)
         M.refresh_signs()
-        mkreview.notify(string.format("Switched to session: %s", sessions[selected_id].name))
+        mkreview.notify(string.format("Switched to session: %s\n", sessions[selected_id].name))
     end
 
     if config.custom_list_ui then
@@ -226,8 +241,29 @@ function M.new_session()
         local id = state.create_session(name)
         state.switch_session(id)
         M.refresh_signs()
-        mkreview.notify(string.format("Created and switched to session: %s", name))
+        mkreview.notify(string.format("Created and switched to session: %s\n", name))
     end)
+end
+
+--- Removes review(s) for the current line or a range of lines.
+--- @param opts? table Optional range {line1, line2}
+function M.delete_review(opts)
+    local start_line, end_line
+    if opts and opts.line1 and opts.line2 then
+        start_line = opts.line1
+        end_line = opts.line2
+    else
+        local pos = vim.api.nvim_win_get_cursor(0)
+        start_line = pos[1]
+        end_line = pos[1]
+    end
+
+    local bufnr = vim.api.nvim_get_current_buf()
+    state.delete_reviews(bufnr, start_line, end_line)
+    M.refresh_signs()
+
+    local mkreview = require("mkreview")
+    mkreview.notify(string.format("Reviews deleted in range %d-%d.\n", start_line, end_line))
 end
 
 --- Shows the review(s) associated with the current cursor line.
@@ -253,20 +289,17 @@ function M.show_at_cursor()
     for i, snapshot in ipairs(session.history) do
         for _, review in ipairs(snapshot.reviews) do
             if review.bufnr == bufnr and line >= review.start_line and line <= review.end_line then
-                table.insert(
-                    found,
-                    {
-                        type = "History (Snap " .. i .. ")",
-                        comment = review.comment,
-                        time = review.timestamp,
-                    }
-                )
+                table.insert(found, {
+                    type = "History (Snap " .. i .. ")",
+                    comment = review.comment,
+                    time = review.timestamp,
+                })
             end
         end
     end
 
     if #found == 0 then
-        mkreview.notify("No reviews found for this line.", vim.log.levels.WARN)
+        mkreview.notify("No reviews found for this line.\n", vim.log.levels.WARN)
         return
     end
 
@@ -274,7 +307,98 @@ function M.show_at_cursor()
     for _, f in ipairs(found) do
         msg = msg .. string.format("[%s] %s\n", f.type, f.comment)
     end
-    mkreview.notify(msg:sub(1, -2)) -- Remove trailing newline
+    mkreview.notify(msg)
+end
+
+--- Opens the preview window with a markdown buffer for review input.
+--- @param opts table
+--- @param callback function
+function M.preview_input(opts, callback)
+    -- Create a temporary buffer name
+    local buf_name = "[MkReview Comment]"
+    vim.cmd("pedit " .. vim.fn.fnameescape(buf_name))
+
+    -- Switch to the preview window
+    vim.cmd("wincmd P")
+
+    local bufnr = vim.api.nvim_get_current_buf()
+    local winnr = vim.api.nvim_get_current_win()
+
+    -- Configure buffer
+    vim.api.nvim_set_option_value("filetype", "markdown", { buf = bufnr })
+    vim.api.nvim_set_option_value("buftype", "acwrite", { buf = bufnr })
+    vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = bufnr })
+    vim.api.nvim_set_option_value("swapfile", false, { buf = bufnr })
+
+    -- Show prompt as a comment in the buffer if provided
+    if opts.prompt then
+        vim.api.nvim_buf_set_lines(
+            bufnr,
+            0,
+            -1,
+            false,
+            { "<!-- " .. opts.prompt .. " -->", "", "" }
+        )
+        vim.api.nvim_win_set_cursor(winnr, { 3, 0 })
+    end
+
+    local submitted = false
+    local function confirm(internal_opts)
+        if submitted then
+            return
+        end
+        internal_opts = internal_opts or {}
+
+        local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+        -- Filter out the prompt comment if we added it
+        if opts.prompt and lines[1] and lines[1]:match("^<!%-%-.*%-%->") then
+            table.remove(lines, 1)
+            if lines[1] == "" then
+                table.remove(lines, 1)
+            end
+        end
+
+        local input = table.concat(lines, "\n")
+        input = input:gsub("^%s*", ""):gsub("%s*$", "") -- Trim
+
+        submitted = true
+        -- Set buffer as not modified so we can close it without error
+        vim.api.nvim_set_option_value("modified", false, { buf = bufnr })
+
+        if not internal_opts.from_autocmd then
+            vim.cmd("pclose")
+        end
+
+        if input == "" then
+            callback(nil)
+        else
+            callback(input)
+        end
+    end
+
+    local function cancel()
+        if submitted then
+            return
+        end
+        submitted = true
+        callback(nil)
+    end
+
+    -- Support :w, :wq, :x
+    vim.api.nvim_create_autocmd("BufWriteCmd", {
+        buffer = bufnr,
+        callback = function()
+            confirm { from_autocmd = true }
+        end,
+    })
+
+    -- Cancel if closed without saving
+    vim.api.nvim_create_autocmd("BufWinLeave", {
+        buffer = bufnr,
+        callback = cancel,
+    })
+
+    vim.cmd("startinsert")
 end
 
 return M

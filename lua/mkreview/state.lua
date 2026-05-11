@@ -103,13 +103,34 @@ end
 ---Pushes the current active reviews into history and clears them.
 function M.push_current_to_history()
     local session = M.get_current_session()
-    if #session.active_reviews == 0 then return end
+    if #session.active_reviews == 0 then
+        return
+    end
 
     table.insert(session.history, {
         reviews = vim.deepcopy(session.active_reviews),
         dumped_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
     })
     session.active_reviews = {}
+end
+
+---Removes reviews that overlap with the given line range in a buffer.
+---@param bufnr number
+---@param start_line number
+---@param end_line number
+function M.delete_reviews(bufnr, start_line, end_line)
+    local session = M.get_current_session()
+    local new_reviews = {}
+    for _, review in ipairs(session.active_reviews) do
+        -- A review overlaps if its range [review.start_line, review.end_line]
+        -- intersects with the target range [start_line, end_line].
+        local overlap = review.bufnr == bufnr
+            and not (review.end_line < start_line or review.start_line > end_line)
+        if not overlap then
+            table.insert(new_reviews, review)
+        end
+    end
+    session.active_reviews = new_reviews
 end
 
 ---Clears the current session's active reviews and GitHub metadata.
@@ -144,7 +165,9 @@ end
 ---Deletes a session.
 ---@param id string
 function M.delete_session(id)
-    if id == "default" then return end
+    if id == "default" then
+        return
+    end
     M.sessions[id] = nil
     if M.current_session_id == id then
         M.current_session_id = "default"
