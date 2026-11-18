@@ -250,4 +250,117 @@ function M.dump()
     end
 end
 
+--- Dumps the complete review session data (active reviews, notes, history) to a new buffer for saving.
+function M.dump_session()
+    local mkreview = require("mkreview")
+    local payload = state.dump_session_data()
+
+    local json_str = vim.fn.json_encode(payload)
+    if vim.fn.executable("jq") == 1 then
+        local formatted = vim.fn.system("jq .", json_str)
+        if vim.v.shell_error == 0 then
+            json_str = formatted
+        end
+    end
+
+    local lines = vim.split(json_str, "\n")
+    -- Trim trailing empty line if present
+    if #lines > 0 and lines[#lines] == "" then
+        table.remove(lines, #lines)
+    end
+
+    -- Create a normal buffer so the user can save with :w <filename>
+    local bufnr = vim.api.nvim_create_buf(true, false)
+    vim.api.nvim_set_option_value("filetype", "json", { buf = bufnr })
+    vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = bufnr })
+
+    local base_name = "MkReview Session Dump"
+    local final_name = base_name
+    local counter = 1
+    while vim.fn.bufexists(final_name) ~= 0 do
+        final_name = string.format("%s (%d)", base_name, counter)
+        counter = counter + 1
+    end
+    vim.api.nvim_buf_set_name(bufnr, final_name)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+
+    -- Open buffer in vsplit
+    vim.api.nvim_command("vsplit")
+    vim.api.nvim_win_set_buf(0, bufnr)
+
+    local formatprg = vim.api.nvim_get_option_value("formatprg", { buf = bufnr })
+    if formatprg ~= "" then
+        vim.api.nvim_command("normal! gqG")
+    end
+
+    vim.api.nvim_set_option_value("modified", false, { buf = bufnr })
+    mkreview.notify("Session dumped to buffer. Use :w <filepath> to save review JSON.")
+end
+
+--- Loads a session from a JSON file into a new session.
+--- @param filepath? string Path to review JSON file
+--- @param session_name? string Optional custom session name
+function M.load_session(filepath, session_name)
+    local mkreview = require("mkreview")
+
+    local function do_load(path, name)
+        if not path or path == "" then
+            return
+        end
+        local expanded = vim.fn.expand(path)
+        if vim.fn.filereadable(expanded) == 0 then
+            mkreview.notify("File not found or unreadable: " .. expanded, vim.log.levels.ERROR)
+            return
+        end
+
+        local content_lines = vim.fn.readfile(expanded)
+        local content = table.concat(content_lines, "\n")
+        local ok, decoded = pcall(vim.fn.json_decode, content)
+        if not ok or type(decoded) ~= "table" then
+            mkreview.notify("Failed to parse review JSON from: " .. expanded, vim.log.levels.ERROR)
+            return
+        end
+
+        -- If custom name not provided, derive default from JSON or filename
+        local target_name = name
+        if not target_name or target_name == "" then
+            target_name = decoded.name
+                or (type(decoded.body) == "string" and decoded.body:match("^Review session:%s*(.+)"))
+                or vim.fn.fnamemodify(expanded, ":t:r")
+        end
+
+        local new_id, err = state.load_session_data(decoded, target_name)
+        if not new_id then
+            mkreview.notify(err or "Failed to load session data.", vim.log.levels.ERROR)
+            return
+        end
+
+        state.switch_session(new_id)
+        require("mkreview.ui").refresh_signs()
+
+        local session = state.get_current_session()
+        local is_gh = (decoded.comments ~= nil) or ((vim.islist and vim.islist(decoded)) or (type(decoded[1]) == "table"))
+        local format_label = is_gh and "GitHub" or "MkReview"
+        mkreview.notify(
+            string.format(
+                "Loaded %s session '%s' with %d review(s) and %d note(s).",
+                format_label,
+                session.name,
+                #session.active_reviews,
+                #(session.notes or {})
+            )
+        )
+    end
+
+    if not filepath or filepath == "" then
+        vim.ui.input({ prompt = "Review JSON file to load: ", completion = "file" }, function(input)
+            if input and input ~= "" then
+                do_load(input, session_name)
+            end
+        end)
+    else
+        do_load(filepath, session_name)
+    end
+end
+
 return M

@@ -80,6 +80,48 @@ The typical workflow consists of:
             On subsequent runs, the PR number is optional, and comments will
             be appended to the existing pending review.
 
+:MkReviewDumpSession                                   *:MkReviewDumpSession*
+        Serialize the entire current session state (active reviews, notes,
+        history, and GitHub metadata) into a new buffer formatted as JSON.
+        You can inspect the contents and simply run `:w <filepath>` to save
+        it to disk.
+
+:MkReviewLoad                                                 *:MkReviewLoad*
+        [:MkReviewLoad [filepath] [session_name]]
+        Load a review JSON file into a new session. Automatically detects
+        whether the file is in MkReview session format or GitHub PR review
+        format ({ body, comments: [...] } or an array of comments). If
+        `filepath` is omitted, prompts via |vim.ui.input| with file
+        completion. Restores active reviews, self notes, history, and
+        refreshes gutter signs.
+
+:MkReviewImportGitHub                                 *:MkReviewImportGitHub*
+        [:MkReviewImportGitHub [filepath] [session_name]]
+        Import a review payload in GitHub review JSON format into a new
+        session. Converts relative paths to absolute paths within the
+        current project root, populates active reviews, and sets gutter signs.
+
+:MkReviewNoteAdd                                           *:MkReviewNoteAdd*
+        Add a self note for the current line (Normal mode) or selected range
+        (Visual mode). Notes are displayed with a distinct gutter sign (default
+        "N") and are kept separate from PR review comments.
+
+:MkReviewNotes                                               *:MkReviewNotes*
+        Populate the location list with all self notes in the current session
+        and open it (|:lopen|). Allows jumping directly to notes so you can
+        revisit your points of interest later.
+
+:MkReviewNoteView                                         *:MkReviewNoteView*
+        Open a preview window displaying the full self note on the current
+        cursor line in markdown format. Press `q` or `<Esc>` inside the
+        preview window to close it.
+
+:MkReviewNoteDelete                                     *:MkReviewNoteDelete*
+        Delete self note(s) overlapping the current line or visual range.
+
+:MkReviewNoteEdit                                         *:MkReviewNoteEdit*
+        Edit the self note located at the current cursor line.
+
 :MkReviewPush                                                 *:MkReviewPush*
         Move all active reviews in the current session to the history
         stack and clear the gutter signs. This is recommended after
@@ -109,7 +151,17 @@ sign_text                                                 *mkreview-sign_text*
 sign_hl                                                     *mkreview-sign_hl*
         Type: `string`
         Default: `"DiagnosticSignInfo"`
-        The highlight group for the sign.
+        The highlight group for the review sign.
+
+note_sign_text                                           *mkreview-note_sign_text*
+        Type: `string`
+        Default: `"N"`
+        The character to display in the sign column for self notes.
+
+note_sign_hl                                               *mkreview-note_sign_hl*
+        Type: `string`
+        Default: `"DiagnosticSignHint"`
+        The highlight group for the self note sign.
 
 export_filename                                     *mkreview-export_filename*
         Type: `string`

@@ -57,31 +57,62 @@ function M.add_review(opts)
         mkreview.notify(string.format("Review added to session: %s\n", current_session.name))
     end
     if config.custom_ui then
-        config.custom_ui({ prompt = "Review Comment: " }, on_confirm)
+        config.custom_ui({ prompt = "Review Comment: ", is_edit = false }, on_confirm)
     else
         vim.ui.input({ prompt = "Review Comment: " }, on_confirm)
     end
 end
 
---- Refreshes the gutter signs for the current session's active reviews.
+--- Refreshes the gutter signs for the current session's active reviews and self notes.
 function M.refresh_signs()
     vim.fn.sign_unplace("MkReviewGroup")
+    vim.fn.sign_unplace("MkReviewNoteGroup")
     local current_session = state.get_current_session()
     local config = require("mkreview").config
 
-    -- Re-define the sign just in case
+    -- Re-define signs just in case
     vim.fn.sign_define("MkReviewSign", {
         text = config.sign_text,
         texthl = config.sign_hl,
     })
+    vim.fn.sign_define("MkReviewNoteSign", {
+        text = config.note_sign_text,
+        texthl = config.note_sign_hl,
+    })
 
-    for _, review in ipairs(current_session.active_reviews) do
-        -- Only place signs for buffers that are still valid/loaded
-        if vim.api.nvim_buf_is_valid(review.bufnr) then
+    local function get_valid_buf(item)
+        if item.bufnr and vim.api.nvim_buf_is_valid(item.bufnr) and vim.api.nvim_buf_is_loaded(item.bufnr) then
+            return item.bufnr
+        end
+        if item.filename and item.filename ~= "" then
+            local b = vim.fn.bufnr(item.filename)
+            if b ~= -1 and vim.api.nvim_buf_is_valid(b) and vim.api.nvim_buf_is_loaded(b) then
+                item.bufnr = b
+                return b
+            end
+        end
+        return nil
+    end
+
+    for _, review in ipairs(current_session.active_reviews or {}) do
+        local b = get_valid_buf(review)
+        if b then
             for line = review.start_line, review.end_line do
-                vim.fn.sign_place(0, "MkReviewGroup", "MkReviewSign", review.bufnr, {
+                vim.fn.sign_place(0, "MkReviewGroup", "MkReviewSign", b, {
                     lnum = line,
                     priority = 10,
+                })
+            end
+        end
+    end
+
+    for _, note in ipairs(current_session.notes or {}) do
+        local b = get_valid_buf(note)
+        if b then
+            for line = note.start_line, note.end_line do
+                vim.fn.sign_place(0, "MkReviewNoteGroup", "MkReviewNoteSign", b, {
+                    lnum = line,
+                    priority = 11,
                 })
             end
         end
@@ -288,6 +319,7 @@ function M.edit_review()
     M.preview_input({
         prompt = "Edit Review Comment",
         initial_content = review.comment,
+        is_edit = true,
     }, function(new_comment)
         if not new_comment or new_comment == "" then
             return
@@ -302,13 +334,18 @@ function M.show_at_cursor()
     local mkreview = require("mkreview")
     local session = state.get_current_session()
     local bufnr = vim.api.nvim_get_current_buf()
+    local current_filename = vim.api.nvim_buf_get_name(bufnr)
     local line = vim.api.nvim_win_get_cursor(0)[1]
+
+    local function matches_buf(item)
+        return item.bufnr == bufnr or (item.filename and item.filename ~= "" and item.filename == current_filename)
+    end
 
     local found = {}
 
     -- Check active reviews
-    for _, review in ipairs(session.active_reviews) do
-        if review.bufnr == bufnr and line >= review.start_line and line <= review.end_line then
+    for _, review in ipairs(session.active_reviews or {}) do
+        if matches_buf(review) and line >= review.start_line and line <= review.end_line then
             table.insert(
                 found,
                 { type = "Active", comment = review.comment, time = review.timestamp }
@@ -316,10 +353,20 @@ function M.show_at_cursor()
         end
     end
 
+    -- Check notes
+    for _, note in ipairs(session.notes or {}) do
+        if matches_buf(note) and line >= note.start_line and line <= note.end_line then
+            table.insert(
+                found,
+                { type = "Note", comment = note.comment, time = note.timestamp }
+            )
+        end
+    end
+
     -- Check history
-    for i, snapshot in ipairs(session.history) do
-        for _, review in ipairs(snapshot.reviews) do
-            if review.bufnr == bufnr and line >= review.start_line and line <= review.end_line then
+    for i, snapshot in ipairs(session.history or {}) do
+        for _, review in ipairs(snapshot.reviews or {}) do
+            if matches_buf(review) and line >= review.start_line and line <= review.end_line then
                 table.insert(found, {
                     type = "History (Snap " .. i .. ")",
                     comment = review.comment,
@@ -330,7 +377,7 @@ function M.show_at_cursor()
     end
 
     if #found == 0 then
-        mkreview.notify("No reviews found for this line.\n", vim.log.levels.WARN)
+        mkreview.notify("No reviews or notes found for this line.\n", vim.log.levels.WARN)
         return
     end
 
@@ -339,6 +386,192 @@ function M.show_at_cursor()
         msg = msg .. string.format("[%s] %s\n", f.type, f.comment)
     end
     mkreview.notify(msg)
+end
+
+--- Prompts the user for a self note and saves it.
+--- @param opts? table Optional range {line1, line2}
+function M.add_note(opts)
+    local range
+    if opts and opts.line1 and opts.line2 then
+        range = {
+            start_line = opts.line1,
+            end_line = opts.line2,
+            start_col = 1,
+            end_col = #vim.fn.getline(opts.line2),
+        }
+    else
+        range = utils.get_selection()
+    end
+
+    local bufnr = vim.api.nvim_get_current_buf()
+    local filename = vim.api.nvim_buf_get_name(bufnr)
+    local mkreview = require("mkreview")
+    local config = mkreview.config
+
+    vim.fn.sign_define("MkReviewNoteSign", {
+        text = config.note_sign_text,
+        texthl = config.note_sign_hl,
+    })
+
+    local function on_confirm(input)
+        if not input or input == "" then
+            mkreview.notify("Self note cancelled or empty.\n", vim.log.levels.WARN)
+            return
+        end
+
+        state.add_note {
+            bufnr = bufnr,
+            filename = filename,
+            start_line = range.start_line,
+            start_col = range.start_col,
+            end_line = range.end_line,
+            end_col = range.end_col,
+            comment = input,
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        }
+
+        -- Add sign to the gutter for all lines in the range
+        for line = range.start_line, range.end_line do
+            vim.fn.sign_place(0, "MkReviewNoteGroup", "MkReviewNoteSign", bufnr, {
+                lnum = line,
+                priority = 11,
+            })
+        end
+
+        local current_session = state.get_current_session()
+        mkreview.notify(string.format("Self note added to session: %s\n", current_session.name))
+    end
+
+    if config.custom_ui then
+        config.custom_ui({ prompt = "Self Note: ", is_edit = false }, on_confirm)
+    else
+        vim.ui.input({ prompt = "Self Note: " }, on_confirm)
+    end
+end
+
+--- Removes note(s) for the current line or a range of lines.
+--- @param opts? table Optional range {line1, line2}
+function M.delete_note(opts)
+    local start_line, end_line
+    if opts and opts.line1 and opts.line2 then
+        start_line = opts.line1
+        end_line = opts.line2
+    else
+        local pos = vim.api.nvim_win_get_cursor(0)
+        start_line = pos[1]
+        end_line = pos[1]
+    end
+
+    local bufnr = vim.api.nvim_get_current_buf()
+    state.delete_notes(bufnr, start_line, end_line)
+    M.refresh_signs()
+
+    local mkreview = require("mkreview")
+    mkreview.notify(string.format("Notes deleted in range %d-%d.\n", start_line, end_line))
+end
+
+--- Edits the note on the current cursor line.
+function M.edit_note()
+    local bufnr = vim.api.nvim_get_current_buf()
+    local line = vim.api.nvim_win_get_cursor(0)[1]
+    local note = state.get_note_at_line(bufnr, line)
+
+    local mkreview = require("mkreview")
+    if not note then
+        mkreview.notify("No active note found on this line to edit.\n", vim.log.levels.WARN)
+        return
+    end
+
+    M.preview_input({
+        prompt = "Edit Self Note",
+        initial_content = note.comment,
+        is_edit = true,
+    }, function(new_comment)
+        if not new_comment or new_comment == "" then
+            return
+        end
+        state.update_note(note, new_comment)
+        mkreview.notify("Note updated.\n")
+    end)
+end
+
+--- Displays the self note for the current cursor line in the preview window.
+function M.view_note()
+    local bufnr = vim.api.nvim_get_current_buf()
+    local line = vim.api.nvim_win_get_cursor(0)[1]
+    local note = state.get_note_at_line(bufnr, line)
+    local mkreview = require("mkreview")
+
+    if not note then
+        mkreview.notify("No self note found on this line to view.\n", vim.log.levels.WARN)
+        return
+    end
+
+    local buf_name = "[MkReview Note View]"
+    vim.cmd("pedit " .. vim.fn.fnameescape(buf_name))
+    vim.cmd("wincmd P")
+
+    local pbufnr = vim.api.nvim_get_current_buf()
+    local pwinnr = vim.api.nvim_get_current_win()
+
+    vim.api.nvim_set_option_value("filetype", "markdown", { buf = pbufnr })
+    vim.api.nvim_set_option_value("buftype", "nofile", { buf = pbufnr })
+    vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = pbufnr })
+    vim.api.nvim_set_option_value("swapfile", false, { buf = pbufnr })
+    vim.api.nvim_set_option_value("modifiable", true, { buf = pbufnr })
+
+    local header = string.format(
+        "<!-- Note: %s:%d-%d | %s -->",
+        vim.fn.fnamemodify(note.filename, ":t"),
+        note.start_line,
+        note.end_line,
+        note.timestamp
+    )
+    local lines = { header, "" }
+    for _, l in ipairs(vim.split(note.comment, "\n")) do
+        table.insert(lines, l)
+    end
+
+    vim.api.nvim_buf_set_lines(pbufnr, 0, -1, false, lines)
+    vim.api.nvim_set_option_value("modifiable", false, { buf = pbufnr })
+    vim.api.nvim_set_option_value("modified", false, { buf = pbufnr })
+
+    -- Easy exit mappings for preview window
+    vim.keymap.set("n", "q", "<cmd>pclose<CR>", { buffer = pbufnr, nowait = true, silent = true })
+    vim.keymap.set("n", "<Esc>", "<cmd>pclose<CR>", { buffer = pbufnr, nowait = true, silent = true })
+
+    vim.api.nvim_win_set_cursor(pwinnr, { #lines > 2 and 3 or 1, 0 })
+end
+
+--- Lists notes in the location list for the current window.
+function M.list_notes()
+    local current_session = state.get_current_session()
+    local notes = current_session.notes or {}
+    local mkreview = require("mkreview")
+
+    if #notes == 0 then
+        mkreview.notify(
+            string.format("No notes in session: %s\n", current_session.name),
+            vim.log.levels.WARN
+        )
+        return
+    end
+
+    local loc_items = {}
+    for _, note in ipairs(notes) do
+        local display_comment = note.comment:gsub("\n", " ")
+        table.insert(loc_items, {
+            bufnr = (note.bufnr and vim.api.nvim_buf_is_valid(note.bufnr)) and note.bufnr or nil,
+            filename = note.filename,
+            lnum = note.start_line,
+            col = note.start_col,
+            text = display_comment,
+        })
+    end
+
+    vim.fn.setloclist(0, loc_items, "r")
+    vim.fn.setloclist(0, {}, "a", { title = string.format("MkReview Notes: %s", current_session.name) })
+    vim.cmd("lopen")
 end
 
 --- Opens the preview window with a markdown buffer for review input.
@@ -378,6 +611,7 @@ function M.preview_input(opts, callback)
     end
 
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, initial_lines)
+    vim.api.nvim_set_option_value("modified", false, { buf = bufnr })
 
     -- Position cursor: after the prompt if it exists, otherwise at the top
     local start_row = opts.prompt and 3 or 1
@@ -439,7 +673,17 @@ function M.preview_input(opts, callback)
         callback = cancel,
     })
 
-    vim.cmd("startinsert")
+    -- Mode selection: Normal mode when editing, Insert mode when adding
+    local is_edit = opts.is_edit
+    if is_edit == nil then
+        is_edit = (opts.initial_content ~= nil and opts.initial_content ~= "")
+    end
+
+    if is_edit then
+        vim.cmd("stopinsert")
+    else
+        vim.cmd("startinsert")
+    end
 end
 
 return M
