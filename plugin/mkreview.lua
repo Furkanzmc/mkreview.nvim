@@ -17,6 +17,10 @@ vim.api.nvim_create_user_command("MkReviewShow", function()
     require("mkreview.ui").show_at_cursor()
 end, { desc = "Show review(s) for the current line" })
 
+vim.api.nvim_create_user_command("MkReviewView", function()
+    require("mkreview.ui").view_review()
+end, { desc = "View the review comment on the current line in the preview window" })
+
 vim.api.nvim_create_user_command("MkReviewDump", function()
     require("mkreview.export").dump()
 end, { desc = "Dump the review session to JSON" })

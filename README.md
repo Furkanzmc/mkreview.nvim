@@ -26,9 +26,10 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim):
    - Enter your comment in the prompt.
    - A `❯` sign will appear in the sign column.
 
-2. **Show Review at Cursor**:
+2. **Show or View Review at Cursor**:
    - Run `:MkReviewShow` to see the review(s) for the current line in a notification.
-   - This works for both active reviews and historical snapshots.
+   - Run `:MkReviewView` to read the full review comment on the current line in a markdown preview window (close with `q` or `<Esc>`).
+   - Both work for active reviews and historical snapshots.
 
 3. **List and Jump**:
    - Run `:MkReviewList` to see active reviews in the current session.

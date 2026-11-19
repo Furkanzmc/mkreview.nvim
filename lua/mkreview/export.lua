@@ -1,4 +1,5 @@
 local state = require("mkreview.state")
+local utils = require("mkreview.utils")
 local config = require("mkreview").config
 local M = {}
 
@@ -37,14 +38,14 @@ function M.dump()
     end
 
     -- Generate GitHub-compatible payload directly
-    local root = vim.fn.getcwd() .. "/"
+    local cwd = vim.fn.getcwd()
     local github_format = {
         body = string.format("Review session: %s", session.name or "Untitled"),
         comments = {},
     }
 
     for _, review in ipairs(reviews) do
-        local relative_path = review.filename:gsub("^" .. vim.pesc(root), "")
+        local relative_path = utils.to_relative_path(review.filename, cwd)
         local comment = {
             path = relative_path,
             line = review.end_line,

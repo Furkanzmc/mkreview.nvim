@@ -2,6 +2,30 @@ local state = require("mkreview.state")
 local utils = require("mkreview.utils")
 local M = {}
 
+--- Builds a quickfix/location list entry from a review or note item.
+--- Omits invalid buffer numbers (e.g. -1 from loaded sessions or wiped buffers)
+--- so Vim resolves the entry via filename instead of raising E92.
+--- @param item table Review or Note item
+--- @return table
+local function to_qf_item(item)
+    local display_comment = (item.comment or ""):gsub("\n", " ")
+    local bufnr = (
+        type(item.bufnr) == "number"
+        and item.bufnr > 0
+        and vim.api.nvim_buf_is_valid(item.bufnr)
+    )
+            and item.bufnr
+        or nil
+
+    return {
+        bufnr = bufnr,
+        filename = item.filename,
+        lnum = item.start_line,
+        col = item.start_col,
+        text = display_comment,
+    }
+end
+
 --- Prompts the user for a review and saves it.
 --- @param opts? table Optional range {line1, line2}
 function M.add_review(opts)
@@ -81,7 +105,12 @@ function M.refresh_signs()
     })
 
     local function get_valid_buf(item)
-        if item.bufnr and vim.api.nvim_buf_is_valid(item.bufnr) and vim.api.nvim_buf_is_loaded(item.bufnr) then
+        if
+            type(item.bufnr) == "number"
+            and item.bufnr > 0
+            and vim.api.nvim_buf_is_valid(item.bufnr)
+            and vim.api.nvim_buf_is_loaded(item.bufnr)
+        then
             return item.bufnr
         end
         if item.filename and item.filename ~= "" then
@@ -162,15 +191,7 @@ function M.list_reviews()
     else
         local qf_items = {}
         for _, review in ipairs(reviews) do
-            -- Handle multi-line comments for quickfix display
-            local display_comment = review.comment:gsub("\n", " ")
-            table.insert(qf_items, {
-                bufnr = review.bufnr,
-                filename = review.filename,
-                lnum = review.start_line,
-                col = review.start_col,
-                text = display_comment,
-            })
+            table.insert(qf_items, to_qf_item(review))
         end
 
         vim.fn.setqflist(qf_items, "r")
@@ -211,15 +232,7 @@ function M.list_history()
         local snapshot = history[snapshot_idx]
         local qf_items = {}
         for _, review in ipairs(snapshot.reviews) do
-            -- Handle multi-line comments for display
-            local display_comment = review.comment:gsub("\n", " ")
-            table.insert(qf_items, {
-                bufnr = review.bufnr,
-                filename = review.filename,
-                lnum = review.start_line,
-                col = review.start_col,
-                text = display_comment,
-            })
+            table.insert(qf_items, to_qf_item(review))
         end
 
         vim.fn.setqflist(qf_items, "r")
@@ -495,19 +508,10 @@ function M.edit_note()
     end)
 end
 
---- Displays the self note for the current cursor line in the preview window.
-function M.view_note()
-    local bufnr = vim.api.nvim_get_current_buf()
-    local line = vim.api.nvim_win_get_cursor(0)[1]
-    local note = state.get_note_at_line(bufnr, line)
-    local mkreview = require("mkreview")
-
-    if not note then
-        mkreview.notify("No self note found on this line to view.\n", vim.log.levels.WARN)
-        return
-    end
-
-    local buf_name = "[MkReview Note View]"
+--- Opens a read-only markdown preview window with the given lines.
+--- @param buf_name string
+--- @param lines string[]
+local function open_preview(buf_name, lines)
     vim.cmd("pedit " .. vim.fn.fnameescape(buf_name))
     vim.cmd("wincmd P")
 
@@ -519,6 +523,89 @@ function M.view_note()
     vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = pbufnr })
     vim.api.nvim_set_option_value("swapfile", false, { buf = pbufnr })
     vim.api.nvim_set_option_value("modifiable", true, { buf = pbufnr })
+
+    vim.api.nvim_buf_set_lines(pbufnr, 0, -1, false, lines)
+    vim.api.nvim_set_option_value("modifiable", false, { buf = pbufnr })
+    vim.api.nvim_set_option_value("modified", false, { buf = pbufnr })
+
+    -- Easy exit mappings for preview window
+    vim.keymap.set("n", "q", "<cmd>pclose<CR>", { buffer = pbufnr, nowait = true, silent = true })
+    vim.keymap.set("n", "<Esc>", "<cmd>pclose<CR>", { buffer = pbufnr, nowait = true, silent = true })
+
+    vim.api.nvim_win_set_cursor(pwinnr, { #lines > 2 and 3 or 1, 0 })
+end
+
+--- Displays the review comment(s) for the current cursor line in the preview window.
+function M.view_review()
+    local bufnr = vim.api.nvim_get_current_buf()
+    local current_filename = vim.api.nvim_buf_get_name(bufnr)
+    local line = vim.api.nvim_win_get_cursor(0)[1]
+    local mkreview = require("mkreview")
+
+    local entries = {}
+    for _, review in ipairs(state.get_reviews_at_line(bufnr, line)) do
+        table.insert(entries, { label = "Review", item = review })
+    end
+
+    -- Fall back to historical snapshots if no active review is on this line
+    if #entries == 0 then
+        local session = state.get_current_session()
+        for i, snapshot in ipairs(session.history or {}) do
+            for _, review in ipairs(snapshot.reviews or {}) do
+                local matches_buf = review.bufnr == bufnr
+                    or (review.filename and review.filename ~= "" and review.filename == current_filename)
+                if matches_buf and line >= review.start_line and line <= review.end_line then
+                    table.insert(entries, {
+                        label = string.format("Review (History Snap %d)", i),
+                        item = review,
+                    })
+                end
+            end
+        end
+    end
+
+    if #entries == 0 then
+        mkreview.notify("No review found on this line to view.\n", vim.log.levels.WARN)
+        return
+    end
+
+    local lines = {}
+    for idx, entry in ipairs(entries) do
+        local review = entry.item
+        if idx > 1 then
+            table.insert(lines, "")
+            table.insert(lines, "---")
+            table.insert(lines, "")
+        end
+        local header = string.format(
+            "<!-- %s: %s:%d-%d | %s -->",
+            entry.label,
+            vim.fn.fnamemodify(review.filename or "", ":t"),
+            review.start_line,
+            review.end_line,
+            review.timestamp or ""
+        )
+        table.insert(lines, header)
+        table.insert(lines, "")
+        for _, l in ipairs(vim.split(review.comment or "", "\n")) do
+            table.insert(lines, l)
+        end
+    end
+
+    open_preview("[MkReview View]", lines)
+end
+
+--- Displays the self note for the current cursor line in the preview window.
+function M.view_note()
+    local bufnr = vim.api.nvim_get_current_buf()
+    local line = vim.api.nvim_win_get_cursor(0)[1]
+    local note = state.get_note_at_line(bufnr, line)
+    local mkreview = require("mkreview")
+
+    if not note then
+        mkreview.notify("No self note found on this line to view.\n", vim.log.levels.WARN)
+        return
+    end
 
     local header = string.format(
         "<!-- Note: %s:%d-%d | %s -->",
@@ -532,15 +619,7 @@ function M.view_note()
         table.insert(lines, l)
     end
 
-    vim.api.nvim_buf_set_lines(pbufnr, 0, -1, false, lines)
-    vim.api.nvim_set_option_value("modifiable", false, { buf = pbufnr })
-    vim.api.nvim_set_option_value("modified", false, { buf = pbufnr })
-
-    -- Easy exit mappings for preview window
-    vim.keymap.set("n", "q", "<cmd>pclose<CR>", { buffer = pbufnr, nowait = true, silent = true })
-    vim.keymap.set("n", "<Esc>", "<cmd>pclose<CR>", { buffer = pbufnr, nowait = true, silent = true })
-
-    vim.api.nvim_win_set_cursor(pwinnr, { #lines > 2 and 3 or 1, 0 })
+    open_preview("[MkReview Note View]", lines)
 end
 
 --- Lists notes in the location list for the current window.
@@ -559,14 +638,7 @@ function M.list_notes()
 
     local loc_items = {}
     for _, note in ipairs(notes) do
-        local display_comment = note.comment:gsub("\n", " ")
-        table.insert(loc_items, {
-            bufnr = (note.bufnr and vim.api.nvim_buf_is_valid(note.bufnr)) and note.bufnr or nil,
-            filename = note.filename,
-            lnum = note.start_line,
-            col = note.start_col,
-            text = display_comment,
-        })
+        table.insert(loc_items, to_qf_item(note))
     end
 
     vim.fn.setloclist(0, loc_items, "r")

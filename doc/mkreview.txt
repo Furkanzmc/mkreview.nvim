@@ -52,6 +52,12 @@ The typical workflow consists of:
         |vim.notify|. This searches both active reviews and historical
         snapshots.
 
+:MkReviewView                                                 *:MkReviewView*
+        Open a preview window displaying the full review comment(s) on the
+        current cursor line in markdown format (falls back to historical
+        snapshots if no active review is present). Press `q` or `<Esc>`
+        inside the preview window to close it.
+
 :MkReviewList                                                 *:MkReviewList*
         List active reviews in the current session. Selecting a review
         will jump to the corresponding file and line.

@@ -1,4 +1,5 @@
 --- @brief This plugin was autonomously developed by Gemini CLI (an AI assistant).
+local utils = require("mkreview.utils")
 local M = {}
 
 ---@class Review
@@ -84,18 +85,27 @@ function M.add_review(review)
     table.insert(M.sessions[M.current_session_id].active_reviews, review)
 end
 
+---Finds all active reviews at the given line in a buffer.
+---@param bufnr number
+---@param line number
+---@return Review[]
+function M.get_reviews_at_line(bufnr, line)
+    local session = M.get_current_session()
+    local matches = {}
+    for _, review in ipairs(session.active_reviews or {}) do
+        if item_matches_buf(review, bufnr) and line >= review.start_line and line <= review.end_line then
+            table.insert(matches, review)
+        end
+    end
+    return matches
+end
+
 ---Finds an active review at the given line in a buffer.
 ---@param bufnr number
 ---@param line number
 ---@return Review|nil
 function M.get_review_at_line(bufnr, line)
-    local session = M.get_current_session()
-    for _, review in ipairs(session.active_reviews) do
-        if item_matches_buf(review, bufnr) and line >= review.start_line and line <= review.end_line then
-            return review
-        end
-    end
-    return nil
+    return M.get_reviews_at_line(bufnr, line)[1]
 end
 
 ---Updates the comment of an existing review.
@@ -280,9 +290,33 @@ function M.delete_session(id)
 end
 
 ---Returns the full current session data table formatted for JSON dumping.
+---All file paths are converted to paths relative to the current working directory.
 ---@return table
 function M.dump_session_data()
     local session = M.get_current_session()
+    local cwd = vim.fn.getcwd()
+
+    local function relativize_items(items)
+        local result = vim.deepcopy(items or {})
+        for _, item in ipairs(result) do
+            if item.filename and item.filename ~= "" then
+                item.filename = utils.to_relative_path(item.filename, cwd)
+            end
+        end
+        return result
+    end
+
+    local history = vim.deepcopy(session.history or {})
+    for _, snap in ipairs(history) do
+        if snap.reviews then
+            for _, rev in ipairs(snap.reviews) do
+                if rev.filename and rev.filename ~= "" then
+                    rev.filename = utils.to_relative_path(rev.filename, cwd)
+                end
+            end
+        end
+    end
+
     return {
         version = 1,
         id = session.id,
@@ -292,9 +326,9 @@ function M.dump_session_data()
         github_review_node_id = session.github_review_node_id,
         github_commit_id = session.github_commit_id,
         github_pr_node_id = session.github_pr_node_id,
-        active_reviews = vim.deepcopy(session.active_reviews or {}),
-        notes = vim.deepcopy(session.notes or {}),
-        history = vim.deepcopy(session.history or {}),
+        active_reviews = relativize_items(session.active_reviews),
+        notes = relativize_items(session.notes),
+        history = history,
     }
 end
 
@@ -328,22 +362,25 @@ function M.load_session_data(data, custom_name)
     local id = M.create_session(name)
     local session = M.sessions[id]
 
-    -- Resolve buffer numbers if files are already open/loaded
-    local function resolve_bufnr(item)
+    -- Resolve relative paths against cwd and attach buffer numbers if already loaded
+    local cwd = vim.fn.getcwd()
+    local function resolve_item(item)
         if item.filename and item.filename ~= "" then
+            item.filename = utils.to_absolute_path(item.filename, cwd)
             local bufnr = vim.fn.bufnr(item.filename)
             if bufnr ~= -1 and vim.api.nvim_buf_is_loaded(bufnr) then
                 item.bufnr = bufnr
             else
                 item.bufnr = -1
             end
+        else
+            item.bufnr = -1
         end
     end
 
     if is_github_format then
         -- Convert GitHub-compatible review JSON into mkreview format
         local raw_comments = is_list and data or data.comments or {}
-        local root = vim.fn.getcwd() .. "/"
 
         session.created_at = data.created_at or os.date("!%Y-%m-%dT%H:%M:%SZ")
         session.github_review_node_id = data.node_id or data.review_node_id or data.id
@@ -355,11 +392,7 @@ function M.load_session_data(data, custom_name)
 
         for _, comment in ipairs(raw_comments) do
             local rel_path = comment.path or comment.filename or ""
-            local full_path = rel_path
-            if full_path ~= "" and not full_path:match("^/") and not full_path:match("^%a:[/\\]") then
-                -- Resolve relative path against current working directory
-                full_path = vim.fs.normalize(root .. rel_path)
-            end
+            local full_path = utils.to_absolute_path(rel_path, cwd)
 
             local start_line = tonumber(comment.start_line) or tonumber(comment.line) or 1
             local end_line = tonumber(comment.line) or start_line
@@ -377,7 +410,7 @@ function M.load_session_data(data, custom_name)
                 comment = comment.body or "",
                 timestamp = comment.created_at or os.date("!%Y-%m-%dT%H:%M:%SZ"),
             }
-            resolve_bufnr(rev)
+            resolve_item(rev)
             table.insert(session.active_reviews, rev)
         end
     else
@@ -392,15 +425,15 @@ function M.load_session_data(data, custom_name)
         session.history = data.history or {}
 
         for _, rev in ipairs(session.active_reviews) do
-            resolve_bufnr(rev)
+            resolve_item(rev)
         end
         for _, note in ipairs(session.notes) do
-            resolve_bufnr(note)
+            resolve_item(note)
         end
         for _, snap in ipairs(session.history) do
             if snap.reviews then
                 for _, rev in ipairs(snap.reviews) do
-                    resolve_bufnr(rev)
+                    resolve_item(rev)
                 end
             end
         end
